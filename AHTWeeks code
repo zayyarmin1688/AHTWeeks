@@ -1,0 +1,115 @@
+const nuciCalendarID = "98c5fe4d1d76a14c9b1c23018b6b66ee467a7df8991f7a5ee0dc394c03b16be8@group.calendar.google.com"; // Replace with your Calendar ID
+const calendar = CalendarApp.getCalendarById(nuciCalendarID);
+const start = new Date("Thurs Jan 01 00:00:00 GMT-05:00 2000");
+const end = new Date("Sat Dec 30 00:00:00 GMT-05:00 2200");
+
+function main() {
+  var allEvents = calendar.getEvents(start, end);
+  var customLog = processValidation();
+  customLog.forEach(function(log) {
+    if (!checkEvents(log, allEvents)) {
+      updateCalendar(log);
+    }
+  });
+  validationCheck(customLog, allEvents);
+}
+
+function processValidation() {
+  var rows = SpreadsheetApp.getActiveSheet().getDataRange().getValues();
+  var headers = rows.shift();
+  var log = [];
+  rows.forEach(function(row) {
+    if(row[23]) { // "Valid Event?" column
+      var rowData = [];
+      for (let i = 0; i <= 23; i++) { // grab relevant data
+        rowData.push(row[i]);
+      }
+      Logger.log(JSON.stringify(rowData));
+      log.push(rowData);
+    }
+  });
+  return log;
+}
+
+function mergeDateAndTime(dateObj, timeVal) {
+  if (!timeVal) throw new Error("Missing or invalid time value");
+
+  const timeStr = String(timeVal).trim(); // force convert to string
+  const timeParts = timeStr.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i);
+
+  if (!timeParts) {
+    throw new Error("Time format not recognized: " + timeStr);
+  }
+
+  let hours = parseInt(timeParts[1]);
+  const minutes = parseInt(timeParts[2]);
+  const isPM = timeParts[3]?.toUpperCase() === "PM";
+
+  if (isPM && hours < 12) hours += 12;
+  if (!isPM && hours === 12) hours = 0;
+
+  const newDate = new Date(dateObj);
+  newDate.setHours(hours);
+  newDate.setMinutes(minutes);
+  newDate.setSeconds(0);
+  return newDate;
+}
+
+
+function updateCalendar(rowData) {
+  const title = rowData[4]; // Title
+  const location = rowData[9];
+  const description = rowData[5];
+  const audience = rowData[14];
+  const extraNotes = rowData[16];
+  const confirmation = rowData[22]; // "Confirmation" column
+
+  const date = new Date(rowData[6]); // Confirmed date
+  const start = mergeDateAndTime(date, rowData[7]); // Start time
+  const end = mergeDateAndTime(date, rowData[8]);   // End time
+
+  const event = calendar.createEvent(title, start, end);
+  event.setLocation(location);
+
+  const fullDescription = `${description || ""}\nTargeted Audience: ${audience || "N/A"}\n${extraNotes || ""}`;
+  event.setDescription(fullDescription);
+
+  if (confirmation) {
+    Logger.log("ADDED COMPLETE: " + title);
+    event.setColor(CalendarApp.EventColor.GREEN);
+    event.setVisibility(CalendarApp.Visibility.PUBLIC);
+  } else {
+    Logger.log("ADDED INCOMPLETE: " + title);
+    event.setColor(CalendarApp.EventColor.RED);
+    event.setVisibility(CalendarApp.Visibility.PRIVATE);
+  }
+}
+
+function validationCheck(valid, allEvents) {
+  allEvents.forEach(function(event) {
+    var name = event.getTitle();
+    if (!nameCheck(valid, name)) {
+      Logger.log("REMOVED: " + event.getTitle());
+      event.deleteEvent();
+    }
+  });
+}
+
+function nameCheck(customLog, name) {
+  for (var i = 0; i < customLog.length; i++) {
+    if(customLog[i][4] === name) { // Title
+      return true;
+    }
+  }
+  return false;
+}
+
+function checkEvents(log, allEvents) {
+  Logger.log(log[4]); // Title
+  for (var i = 0; i < allEvents.length; i++) {
+    if(allEvents[i].getTitle() === log[4]) {
+      return true;
+    }
+  }
+  return false;
+}
